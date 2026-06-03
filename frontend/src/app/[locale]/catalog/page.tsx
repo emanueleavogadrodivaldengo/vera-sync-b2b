@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { LeatherCard } from "@/components/catalog/LeatherCard";
 import { FilterSidebar, type CatalogFilters } from "@/components/catalog/FilterSidebar";
 import { cn } from "@/lib/utils";
+import { useCart } from "@/context/CartContext";
 import type { LeatherOrigin } from "@/types";
 
 // ── Mock Data ────────────────────────────────────────────────
@@ -152,6 +153,7 @@ export default function CatalogPage() {
     search: "",
   });
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const { addItem } = useCart();
 
   const t = (en: string, it: string) => (locale === "it" ? it : en);
 
@@ -309,8 +311,19 @@ export default function CatalogPage() {
                       {...leather}
                       locale={locale}
                       onAddToCart={(id) => {
-                        // TODO: Integrate with cart API
-                        console.log("Add to cart:", id);
+                        const leather = MOCK_LEATHERS.find(l => l.id === id);
+                        if (leather) {
+                          addItem({
+                            id: leather.id,
+                            name: leather.name,
+                            origin: leather.origin,
+                            color: leather.color,
+                            finish: leather.finish,
+                            pricePerSqFt: leather.pricePerSqFt,
+                            supplierName: leather.supplierName,
+                            quantity: 1
+                          });
+                        }
                       }}
                       onViewDetails={(id) => {
                         // TODO: Navigate to detail page

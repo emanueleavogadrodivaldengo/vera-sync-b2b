@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { Providers } from "@/app/providers";
+import { ChatWidget } from "@/components/chat/ChatWidget";
+import "@/app/globals.css";
 
 export const metadata: Metadata = {
   title: "Vera Sync — Sustainable & Exotic Leather Sourcing",
@@ -18,11 +21,15 @@ export default async function LocaleLayout({
   const { locale } = await params;
 
   return (
-    <div className="flex min-h-screen flex-col" data-locale={locale}>
-      <Navbar locale={locale} />
-      <main className="flex-1">{children}</main>
-      <Footer locale={locale} />
-      {/* TODO: AI Chat widget (floating) */}
-    </div>
+    <html lang={locale} suppressHydrationWarning>
+      <body className="flex min-h-screen flex-col" data-locale={locale} suppressHydrationWarning>
+        <Providers>
+          <Navbar locale={locale} />
+          <main className="flex-1">{children}</main>
+          <Footer locale={locale} />
+          <ChatWidget locale={locale} />
+        </Providers>
+      </body>
+    </html>
   );
 }

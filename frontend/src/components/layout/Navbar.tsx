@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
+import { useCart } from "@/context/CartContext";
 
 interface NavbarProps {
   locale: string;
@@ -18,6 +19,7 @@ const navLinks = [
 
 export function Navbar({ locale }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { totalItems } = useCart();
 
   const t = (labels: { en: string; it: string }) =>
     labels[locale as keyof typeof labels] || labels.en;
@@ -36,9 +38,14 @@ export function Navbar({ locale }: NavbarProps) {
             <Link
               key={link.key}
               href={`/${locale}${link.href}`}
-              className="px-4 py-2 text-sm font-medium text-stone-600 hover:text-stone-900 rounded-lg hover:bg-stone-100/80 transition-all duration-200"
+              className="relative px-4 py-2 text-sm font-medium text-stone-600 hover:text-stone-900 rounded-lg hover:bg-stone-100/80 transition-all duration-200"
             >
               {t(link.label)}
+              {link.key === "cart" && totalItems > 0 && (
+                <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-white">
+                  {totalItems}
+                </span>
+              )}
             </Link>
           ))}
         </div>
