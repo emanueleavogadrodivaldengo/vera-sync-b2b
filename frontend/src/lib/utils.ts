@@ -1,12 +1,25 @@
-import { type ClassValue, clsx } from "clsx";
-
 /**
  * Utility to conditionally join class names.
- * Lightweight alternative to clsx for Tailwind CSS usage.
- * Note: Install `clsx` package when implementing components.
+ * Lightweight implementation — no external dependencies.
  */
-export function cn(...inputs: ClassValue[]) {
-  return clsx(inputs);
+export function cn(
+  ...inputs: (string | undefined | null | false | Record<string, boolean>)[]
+): string {
+  const classes: string[] = [];
+
+  for (const input of inputs) {
+    if (!input) continue;
+
+    if (typeof input === "string") {
+      classes.push(input);
+    } else if (typeof input === "object") {
+      for (const [key, value] of Object.entries(input)) {
+        if (value) classes.push(key);
+      }
+    }
+  }
+
+  return classes.join(" ");
 }
 
 /**
