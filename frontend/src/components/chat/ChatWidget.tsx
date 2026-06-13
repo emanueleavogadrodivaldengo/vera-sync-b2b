@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
@@ -19,9 +19,14 @@ export function ChatWidget({ locale }: ChatWidgetProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const t = (en: string, it: string) => (locale === "it" ? it : en);
+  const t = useCallback(
+    (en: string, it: string) => (locale === "it" ? it : en),
+    [locale]
+  );
 
   // Initialize welcome message
   useEffect(() => {
@@ -46,9 +51,18 @@ export function ChatWidget({ locale }: ChatWidgetProps) {
     }
   }, [messages, isTyping, isOpen]);
 
+  // Cleanup abort controller on unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isTyping) return;
+
+    setError(null);
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -56,43 +70,107 @@ export function ChatWidget({ locale }: ChatWidgetProps) {
       content: input.trim(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
     setInput("");
     setIsTyping(true);
 
-    // TODO: Connect to actual OpenAI API in Step 4
-    // Mock response for now
-    setTimeout(() => {
-      let aiResponse = "";
-      const lowerInput = userMessage.content.toLowerCase();
+    // Create a placeholder for the assistant response
+    const assistantId = (Date.now() + 1).toString();
 
-      if (lowerInput.includes("vegan") || lowerInput.includes("vegana")) {
-        aiResponse = t(
-          "We have several amazing vegan options! I recommend checking out our Piñatex (pineapple leaf) or Mushroom Mycelium leathers. They are highly durable and 100% cruelty-free.",
-          "Abbiamo diverse fantastiche opzioni vegane! Ti consiglio di dare un'occhiata alle nostre pelli in Piñatex (foglia di ananas) o Micelio di fungo. Sono molto resistenti e 100% cruelty-free."
-        );
-      } else if (lowerInput.includes("exotic") || lowerInput.includes("esotic")) {
-        aiResponse = t(
-          "For exotic leathers, our Nile Crocodile Belly and Python skins are very popular. All our exotic skins are CITES certified to ensure ethical sourcing.",
-          "Per le pelli esotiche, il nostro ventre di coccodrillo del Nilo e le pelli di pitone sono molto richieste. Tutte le nostre pelli esotiche sono certificate CITES per garantire un approvvigionamento etico."
-        );
-      } else {
-        aiResponse = t(
-          "That's interesting! I can help you filter our catalog based on your specific needs like thickness, origin, or certifications. Would you like me to suggest some options?",
-          "Interessante! Posso aiutarti a filtrare il nostro catalogo in base alle tue esigenze specifiche come spessore, origine o certificazioni. Vuoi che ti suggerisca qualche opzione?"
-        );
+    // Abort any existing request
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+
+    try {
+      // Build the history payload (exclude welcome message id, keep role/content only)
+      const apiMessages = updatedMessages.map(({ role, content }) => ({
+        role,
+        content,
+      }));
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: apiMessages }),
+        signal: abortRef.current.signal,
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || `Request failed (${response.status})`);
       }
 
+      // Process the SSE stream
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response stream available.");
+
+      const decoder = new TextDecoder();
+      let assistantContent = "";
+
+      // Add the assistant message placeholder
       setMessages((prev) => [
         ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: aiResponse,
-        },
+        { id: assistantId, role: "assistant", content: "" },
       ]);
       setIsTyping(false);
-    }, 1500);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = decoder.decode(value, { stream: true });
+        const lines = text.split("\n");
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+          const payload = trimmed.slice(6); // Remove "data: " prefix
+          if (payload === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(payload);
+            if (parsed.error) {
+              throw new Error(parsed.error);
+            }
+            if (parsed.content) {
+              assistantContent += parsed.content;
+              // Update the assistant message with streamed content
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantId
+                    ? { ...msg, content: assistantContent }
+                    : msg
+                )
+              );
+            }
+          } catch (parseErr) {
+            // Skip malformed SSE chunks silently
+            if (parseErr instanceof Error && parseErr.message !== "Stream interrupted.") {
+              // Only throw if it's a real error from our API
+              if ((parseErr as { message: string }).message) {
+                // continue gracefully
+              }
+            }
+          }
+        }
+      }
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // User cancelled — do nothing
+        return;
+      }
+
+      const errorMessage =
+        err instanceof Error ? err.message : "Something went wrong.";
+      setError(errorMessage);
+
+      // Remove the empty assistant placeholder if it exists
+      setMessages((prev) => prev.filter((msg) => msg.id !== assistantId));
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   return (
@@ -165,6 +243,10 @@ export function ChatWidget({ locale }: ChatWidgetProps) {
                 )}
               >
                 {msg.content}
+                {/* Blinking cursor for streaming assistant messages */}
+                {msg.role === "assistant" && msg.content === "" && !isTyping && (
+                  <span className="inline-block w-1.5 h-4 bg-stone-400 animate-pulse ml-0.5 align-middle rounded-sm" />
+                )}
               </div>
             </div>
           ))}
@@ -178,6 +260,22 @@ export function ChatWidget({ locale }: ChatWidgetProps) {
               </div>
             </div>
           )}
+
+          {/* Error message */}
+          {error && (
+            <div className="flex max-w-[85%] mr-auto justify-start animate-fade-in">
+              <div className="p-3 rounded-2xl rounded-tl-sm bg-red-50 text-red-700 border border-red-200 text-sm">
+                ⚠️ {error}
+                <button
+                  onClick={() => setError(null)}
+                  className="ml-2 text-red-500 underline text-xs hover:text-red-700"
+                >
+                  {t("Dismiss", "Chiudi")}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
 
