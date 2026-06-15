@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // ─────────────────────────────────────────────────────────────
 // Vera Sync — Database Seed Script
 // Populates the Supabase PostgreSQL database with realistic
