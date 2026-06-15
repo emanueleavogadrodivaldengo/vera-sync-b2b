@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────
-// Vera Sync — Prisma Schema
-// B2B platform for sustainable & exotic leather sample sourcing
+// Vera Sync — Prisma Schema (Frontend)
+// Shared schema for Next.js Server Component data fetching.
+// This mirrors backend/prisma/schema.prisma — keep in sync.
 // ─────────────────────────────────────────────────────────────
 
 generator client {
